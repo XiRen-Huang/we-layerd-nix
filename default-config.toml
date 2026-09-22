@@ -1,0 +1,13 @@
+# Sample we-layerd config shipped with this flake.
+#
+# Copy it to ~/.config/we-layerd/config.toml, then fill in renderer.source
+# (a Steam Workshop item dir) and renderer.assets_path.
+#
+# This variant forces the SHM (shared-memory) presentation path. It is a
+# WORKAROUND for GPU/compositor combinations where the DMA-BUF path fails
+# (e.g. "create_immed failed"). It gives up the zero-copy DMA-BUF fast path,
+# which is how scene/video wallpapers normally reach the screen.
+
+[renderer]
+prefer_dmabuf = false
+allow_shm_fallback = true

@@ -20,17 +20,20 @@
       # `build-without-git-metadata.patch` makes the root build.rs skip its
       # `git submodule update --init --recursive` (impossible in the sandbox).
       #
-      weLayerdRev = "655bbd7ef69eea2f3ec21286111fcf8541b5848f";
+      weLayerdRev = "ff118c553328d283aa46f86157da219816e68ab1"; # v0.2.8
       weLayerdSrc = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub {
         owner = "Aromatic05";
         repo = "we-layerd";
         rev = weLayerdRev;
         # No submodules here: third_party/wallpaper-engine-renderer is fetched
         # separately (see below) and copied into the tree at build time.
-        hash = "sha256-U/bZGJ7UinqH0rojnh6lVm6DXdJXqfwg0VnkFMrm/vk=";
+        hash = "sha256-F+DoHbw1VFep3Sxm8eNXwC1yQv3D4TitF4WKrAVLcAo=";
       };
 
-      rendererRev = "12dbc5eb8ff49c3ebd0d3df6c875fc1ff0286fb7";
+      # Submodule rev recorded by the root repo's tree at weLayerdRev.
+      # v0.2.8 moved it 12dbc5eb -> 89dfcd86 (renderer staging-ownership fix),
+      # so both pins must move together.
+      rendererRev = "89dfcd86de2dc0ae537bc136046c5ed05733e7b7";
       rendererSrc = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub {
         owner = "Aromatic05";
         repo = "wallpaper-engine-renderer";
@@ -39,7 +42,7 @@
         # CMake build compiles in-tree. nixpkgs fetchFromGitHub does a full
         # `git submodule update --init --recursive` for these.
         fetchSubmodules = true;
-        hash = "sha256-4zQlw01B1M1qdJVfDq0HAKChGGV9NLCmOvGDPfxpfwA=";
+        hash = "sha256-nw11exZ+H1cFoibDKriAi3gQlxLaBmyjjtZNMWyvBIw=";
       };
 
       #
@@ -112,7 +115,7 @@
         in
         pkgs.rustPlatform.buildRustPackage rec {
           pname = "we-layerd";
-          version = "0.2.7";
+          version = "0.2.8";
 
           src = weLayerdSrc;
 
@@ -168,8 +171,8 @@
           #
           cargoBuildFlags = [ "-p" "we-layerd" "-p" "we-gui" ];
           doCheck = false; # unit tests need the renderer .so / a display
-          # Filled in by iterating `nix build` (lib.fakeSha256 the first run).
-          cargoHash = "sha256-5/OpeYpqK+aJiH002A3ikQ0cJC2nv4P/7w64wxpxvvc=";
+          # Filled in by iterating `nix build` (nixpkgs.lib.fakeHash first run).
+          cargoHash = "sha256-X8bRnuP1chZoB4yhl3ecHNnS96Im2fEf1m0mP0Ys2jI=";
 
           # build.rs drives CMake itself (for third_party/wallpaper-engine-renderer).
           # Prevent stdenv's cmake/ninja setup hooks from auto-configuring what is
@@ -316,9 +319,33 @@
               --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${gstPluginDirs}"
               --prefix GST_PLUGIN_PATH_1_0 : "${gstPluginDirs}"
               --prefix GST_PLUGIN_SCANNER_1_0 : "${pkgs.gst_all_1.gstreamer}/libexec/gstreamer-1.0/gst-plugin-scanner"
-              # we-gui dlopens libayatana-appindicator3.so.1 for its tray icon;
-              # autoPatchelf can't see it (no DT_NEEDED) so expose it here.
-              --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.libayatana-appindicator ]}"
+              # These deps are reached by `dlopen`ing a bare soname, which
+              # autoPatchelf cannot see (there is no DT_NEEDED to rewrite), so
+              # they have to be on LD_LIBRARY_PATH:
+              #
+              #   libayatana-appindicator3.so.1 -> we-gui's tray-icon
+              #   libwayland-client.so.0        -> wayland-sys, used by BOTH
+              #       binaries; when it is missing the daemon dies with
+              #       "The wayland library could not be loaded" /
+              #       "Could not find wayland compositor"
+              #   libxkbcommon.so.0             -> winit's xkbcommon-dl (we-gui)
+              #
+              # RULE: only add libs here whose sonames CEF does NOT bundle.
+              # LD_LIBRARY_PATH is searched BEFORE DT_RUNPATH, so a name that
+              # also exists in $out/lib/cef (libEGL.so, libGLESv2.so,
+              # libvulkan.so.1, libvk_swiftshader.so) would win over the
+              # `$ORIGIN` isolation installed in postFixup, and we-cef-helper
+              # inherits this environment — that silently pulls web wallpapers
+              # off CEF's bundled SwiftShader and onto the host graphics stack.
+              # vulkan-loader/libglvnd therefore deliberately stay out; the
+              # renderer already resolves them through its own RUNPATH.
+              --prefix LD_LIBRARY_PATH : "${
+                pkgs.lib.makeLibraryPath [
+                  pkgs.libayatana-appindicator
+                  pkgs.wayland
+                  pkgs.libxkbcommon
+                ]
+              }"
             )
           '';
 
@@ -406,6 +433,14 @@
               $out/share/gnome-shell/extensions/we-layerd@aromatic/
             find $out/share/gnome-shell/extensions/we-layerd@aromatic -type d -exec chmod 0755 {} +
             find $out/share/gnome-shell/extensions/we-layerd@aromatic -type f -exec chmod 0644 {} +
+
+            # Sample config. NOT auto-loaded -- the daemon only ever reads
+            # ~/.config/we-layerd/config.toml -- it is installed so users hitting
+            # the DMA-BUF failure have a ready-made copy to start from. Note it
+            # contradicts upstream's advice (docs/TROUBLESHOOTING.md tells you to
+            # keep prefer_dmabuf = true); see the file's own header.
+            install -Dm0644 ${./default-config.toml} \
+              $out/share/we-layerd/config.default.toml
 
             # DXC + CEF license files
             install -Dm0644 "${dxcRoot}/LICENSE-MS.txt" \

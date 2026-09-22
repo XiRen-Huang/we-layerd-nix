@@ -2,14 +2,14 @@
 
 [we-layerd](https://github.com/Aromatic05/we-layerd) 的 Nix Flake 打包 —— Wayland 上的 Wallpaper Engine 原生运行时（守护进程 + GUI）。
 
-本 flake 是上游 **0.2.7** 的**干净重打包**，重点在于**GPU 安全的 RPATH 隔离**与**厂商中立适配**：A 卡（radv）、i 卡（anv）、N 卡（闭源 / nouveau）复用同一份产物，运行时自动派发到宿主显卡驱动。
+本 flake 是上游 **0.2.8** 的**干净重打包**，重点在于**GPU 安全的 RPATH 隔离**与**厂商中立适配**：A 卡（radv）、i 卡（anv）、N 卡（闭源 / nouveau）复用同一份产物，运行时自动派发到宿主显卡驱动。
 
 ## 版本钉选（与上游 `package/` 脚本一致）
 
 | 组件 | 版本 / 提交 |
 |------|------------|
-| we-layerd | `0.2.7` @ `655bbd7e` |
-| wallpaper-engine-renderer | `12dbc5eb`（带全部子模块：Eigen / glslang / SPIRV-Reflect / …） |
+| we-layerd | `0.2.8` @ `ff118c55`（tag `v0.2.8`） |
+| wallpaper-engine-renderer | `89dfcd86`（带全部子模块：Eigen / glslang / SPIRV-Reflect / …） |
 | CEF | `144.0.30+g9e70dde` / Chromium `144.0.7559.257`（Spotify CDN minimal） |
 | DXC | `1.9.2602.24`（微软官方 Linux 包） |
 | 平台 | `x86_64-linux` 唯一（we-cef-helper 含 x86_64 汇编跳板，CEF minimal 无 aarch64） |
@@ -38,6 +38,7 @@ $out/lib/we-layerd/dxc/{libdxcompiler,libdxil}.so  # DXC 着色器编译器
 $out/share/applications/we-gui.desktop
 $out/share/icons/hicolor/scalable/apps/we-gui.svg
 $out/share/gnome-shell/extensions/we-layerd@aromatic/  # GNOME 扩展
+$out/share/we-layerd/config.default.toml  # 示例配置（DMA-BUF 失败时的备选，不自动加载）
 $out/share/doc/we-layerd/third-party/     # CEF / DXC 许可证
 ```
 
@@ -114,6 +115,25 @@ cache_path   = "~/.cache/we-layerd/renderer"
 | `renderer.source` | Steam 创意工坊壁纸目录 |
 | `renderer.assets_path` | Wallpaper Engine 资源（assets）目录 |
 | `renderer.cache_path` | 渲染缓存目录 |
+| `renderer.prefer_dmabuf` | 优先走 DMA-BUF 零拷贝上屏，上游默认 `true` |
+| `renderer.allow_shm_fallback` | DMA-BUF 不可用时退回 SHM，上游默认 `true` |
+
+### DMA-BUF 失败时的备选配置
+
+若上屏报 `create_immed failed` 一类错误，可改用随包安装的备选配置——它把
+`prefer_dmabuf` 关掉、强制走 SHM 共享内存路径：
+
+```bash
+nix build .#we-layerd --out-link result
+cp result/share/we-layerd/config.default.toml ~/.config/we-layerd/config.toml
+```
+
+（已通过 NixOS / Home Manager 安装的，把 `result` 换成该包的 store 路径，即
+`$(dirname "$(readlink -f "$(command -v we-gui)")")/../share/we-layerd/config.default.toml`。）
+
+注意这是**绕过**而非修复：关掉 DMA-BUF 会失去零拷贝上屏路径（scene / video 壁纸的正常通路）。
+上游 `docs/TROUBLESHOOTING.md` 的建议相反——**保持 `prefer_dmabuf = true`**，让默认就开启的
+`allow_shm_fallback = true` 在拿不到 DMA-BUF 时自动回落。只有在确实撞上上述报错时才用备选配置。
 
 完整配置模型见上游文档：[CONFIGURATION.md](https://github.com/Aromatic05/we-layerd/blob/main/docs/CONFIGURATION.md)。
 

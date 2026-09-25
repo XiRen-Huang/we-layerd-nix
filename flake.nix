@@ -284,21 +284,25 @@
             libxml2
             libxslt
             libxshmfence
-            xorg.libX11
-            xorg.libXcomposite
-            xorg.libXdamage
-            xorg.libXext
-            xorg.libXfixes
-            xorg.libXrender
-            xorg.libXrandr
-            xorg.libXcursor
-            xorg.libXinerama
-            xorg.libXScrnSaver
-            xorg.libXi
-            xorg.libXtst
-            xorg.libxcb
-            xorg.libXdmcp
-            xorg.libXau
+            # Top-level lowercase attrs, NOT `xorg.libX11`: the `xorg` set is a
+            # deprecated alias that emits an eval warning per attribute. These
+            # are the identical derivations (verified same outPath), so the
+            # closure is unchanged.
+            libx11
+            libxcomposite
+            libxdamage
+            libxext
+            libxfixes
+            libxrender
+            libxrandr
+            libxcursor
+            libxinerama
+            libxscrnsaver
+            libxi
+            libxtst
+            libxcb
+            libxdmcp
+            libxau
 
             # C++ standard library (for the prebuilt DXC + CEF libs and any
             # stdenv-built code alike).
